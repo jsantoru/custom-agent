@@ -8,6 +8,7 @@ import com.tools.MathTools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.graph.GraphState;
 import com.graph.SimpleState;
 
 import dev.langchain4j.service.AiServices;
@@ -51,6 +52,46 @@ class ResponderNode implements NodeAction<SimpleState> {
     }
 }
 
+// new nodes
+
+class ProcessNextNode implements NodeAction<GraphState> {
+    @Override
+    public Map<String, Object> apply(GraphState state) {
+        System.out.println("ProcessNextNode executing. Current messages: " + state.messages());
+        return state.data(); // pass through
+    }
+}
+
+class PlannerNode implements NodeAction<GraphState> {
+    private static final String OPENAI_API_KEY = System.getenv("OPENAI_API_KEY");
+    private static final String MODEL_NAME = "gpt-4.1-nano";
+
+
+    @Override
+    public Map<String, Object> apply(GraphState state) throws Exception {
+        System.out.println("PlannerNode executing. Current messages: " + state.messages());
+
+        PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
+        .chatModel(OpenAiChatModel.builder().apiKey(OPENAI_API_KEY).modelName(MODEL_NAME).build())
+        .build();
+
+        List input =  (List) state.data().get(SimpleState.MESSAGES_KEY);
+        System.out.println(input.get(0));
+        String json = plannerAgent.plan((String)input.get(0));
+        System.out.println(json); // finds the category!!!
+        /*
+         * [
+             {"query": "What is 2 plus 2?", "category": "math"}
+            ]
+         */
+
+         // TODO: update this state machine to work with the JsonNodes that expect categories (aka tool names)
+
+        //state.tasks = new ObjectMapper().readTree(json).findValues(".");
+        return Map.of( SimpleState.MESSAGES_KEY, "4" );
+    }
+}
+
 public class LangGraphApp {
     private static final String OPENAI_API_KEY = System.getenv("OPENAI_API_KEY");
     private static final String MODEL_NAME = "gpt-4.1-nano";
@@ -61,19 +102,17 @@ public class LangGraphApp {
         ObjectMapper mapper = new ObjectMapper();
 
         // Build agents
-        // MathAgent mathAgent = AiServices.builder(MathAgent.class)
-        // .tools(new MathTools())
-        // .chatModel(OpenAiChatModel.builder().apiKey(OPENAI_API_KEY).modelName(MODEL_NAME).build())
-        // .build();
+        MathAgent mathAgent = AiServices.builder(MathAgent.class)
+        .tools(new MathTools())
+        .chatModel(OpenAiChatModel.builder().apiKey(OPENAI_API_KEY).modelName(MODEL_NAME).build())
+        .build();
 
-        // DateAgent dateAgent = AiServices.builder(DateAgent.class)
-        // .tools(new DateTools())
-        // .chatModel(OpenAiChatModel.builder().apiKey(OPENAI_API_KEY).modelName(MODEL_NAME).build())
-        // .build();
+        DateAgent dateAgent = AiServices.builder(DateAgent.class)
+        .tools(new DateTools())
+        .chatModel(OpenAiChatModel.builder().apiKey(OPENAI_API_KEY).modelName(MODEL_NAME).build())
+        .build();
 
-        // PlannerAgent plannerAgent = AiServices.builder(PlannerAgent.class)
-        // .chatModel(OpenAiChatModel.builder().apiKey(OPENAI_API_KEY).modelName(MODEL_NAME).build())
-        // .build();
+ 
 
         // LangGraph steps
         // Graph<QueryState> graph = GraphBuilder.<QueryState>builder()
@@ -87,17 +126,22 @@ public class LangGraphApp {
         // Initialize nodes
         GreeterNode greeterNode = new GreeterNode();
         ResponderNode responderNode = new ResponderNode();
+        ProcessNextNode processNextNode = new ProcessNextNode();
+        PlannerNode plannerNode = new PlannerNode();
 
 
         // Define the graph structure
-       var stateGraph = new StateGraph<>(SimpleState.SCHEMA, initData -> new SimpleState(initData))
-            .addNode("greeter", node_async(greeterNode))
-            .addNode("responder", node_async(responderNode))
+       var stateGraph = new StateGraph<>(GraphState.SCHEMA, initData -> new GraphState(initData))
+            //.addNode("greeter", node_async(greeterNode))
+            //.addNode("responder", node_async(responderNode))
+            .addNode("processNext", node_async(new ProcessNextNode()))
+            .addNode("planner", node_async(new PlannerNode()))
             
             // Define edges
-            .addEdge(START, "greeter") // Start with the greeter node
-            .addEdge("greeter", "responder")
-            .addEdge("responder", END);   // End after the responder node
+            .addEdge(START, "processNext") // Start with the greeter node
+            .addEdge("processNext", "planner")
+            //.addEdge("planner", "processNext")
+            .addEdge("planner", END);   // End after the responder node
 
         // Compile the graph
         var compiledGraph = stateGraph.compile();
@@ -107,15 +151,12 @@ public class LangGraphApp {
         // For simplicity, we'll collect results. In a real app, you might process them as they arrive.
         // Here, the final state after execution is the item of interest.
         
-        for (var item : compiledGraph.stream( Map.of( SimpleState.MESSAGES_KEY, "Let's, begin!" ) ) ) {
+        for (var item : compiledGraph.stream( Map.of( SimpleState.MESSAGES_KEY, "What is 2 plus 2?" ) ) ) {
 
             System.out.println( item );
         }
 
-        //         .addNode("process_next", (state) -> {
-        //             if (state.index >= state.tasks.size()) return state;
-        //             return state; // pass through
-        //         })
+                
 
         //         .addNode("math", (state) -> {
         //             String query = state.tasks.get(state.index).get("query").asText();
