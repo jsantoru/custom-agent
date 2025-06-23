@@ -3,6 +3,7 @@ package com.agents;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 
+@Deprecated // deprecated now that we have a planner agent
 public interface RouterAgent {
 
     @SystemMessage("""

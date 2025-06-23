@@ -33,7 +33,7 @@
         <dependency>
             <groupId>org.bsc.langgraph4j</groupId>
             <artifactId>langgraph4j-core</artifactId>
-            <version>1.5.14</version>
+            <version>1.6-beta4</version>
         </dependency>
 
         <!-- Jackson JSON for parsing -->
